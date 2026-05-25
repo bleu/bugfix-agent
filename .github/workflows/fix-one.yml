@@ -109,9 +109,11 @@ jobs:
           mkdir -p .git/info
           grep -qxF '.bugfix-agent/' .git/info/exclude 2>/dev/null || echo '.bugfix-agent/' >> .git/info/exclude
           grep -qxF '.claude/'       .git/info/exclude 2>/dev/null || echo '.claude/'       >> .git/info/exclude
-          git stash push --include-untracked --message "bugfix-agent: pre-claude baseline" -- \
-            ':!.bugfix-agent' ':!.claude' \
-            || echo "nothing to stash"
+          if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+            git stash push --include-untracked --message "bugfix-agent: pre-claude baseline"
+          else
+            echo "working tree clean — nothing to isolate"
+          fi
 
       - name: Run Claude Code
         working-directory: ${{ github.workspace }}
@@ -200,7 +202,11 @@ jobs:
           incident_url=$(echo "$INCIDENT_JSON" | jq -r .url)
           git add -A
           git commit -m "fix: $incident_name [$LINEAR_IDENTIFIER]"
-          git push -u origin "$(git rev-parse --abbrev-ref HEAD)"
+          # Inject auth header explicitly for the push. act's docker-cp checkout
+          # shortcut doesn't set the extraheader that real GHA gets from
+          # actions/checkout; this -c is a no-op on real GHA.
+          git -c "http.https://github.com/.extraheader=Authorization: token ${GH_TOKEN}" \
+            push -u origin "$(git rev-parse --abbrev-ref HEAD)"
           gh pr create \
             --base "${{ inputs.base_branch }}" \
             --title "fix: $incident_name [$LINEAR_IDENTIFIER]" \
