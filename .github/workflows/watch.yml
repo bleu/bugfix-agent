@@ -1,0 +1,76 @@
+name: bugfix-agent / post-deploy watch
+
+on:
+  workflow_call:
+    inputs:
+      deploy_sha:        { type: string, required: true }
+      deploy_time:       { type: string, required: true }
+      window_minutes:    { type: number, default: 30 }
+      base_branch:       { type: string, default: main }
+      config_path:       { type: string, default: .github/agent/config.yml }
+      agent_repo_ref:    { type: string, default: v1 }
+    secrets:
+      ANTHROPIC_API_KEY:          { required: true }
+      LINEAR_API_KEY:             { required: true }
+      APPSIGNAL_APP_ID:           { required: true }
+      APPSIGNAL_PERSONAL_TOKEN:   { required: true }
+      DATABASE_READONLY_URL:      { required: false }
+      TS_OAUTH_CLIENT_ID:         { required: false }
+      TS_OAUTH_SECRET:            { required: false }
+
+jobs:
+  poll:
+    name: poll AppSignal (${{ inputs.window_minutes }}min)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      incident: ${{ steps.poll.outputs.incident }}
+      found: ${{ steps.poll.outputs.found }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: bleu/bugfix-agent
+          ref: ${{ inputs.agent_repo_ref }}
+          path: .bugfix-agent
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - working-directory: .bugfix-agent
+        run: npm install --no-audit --no-fund
+
+      - id: poll
+        working-directory: .bugfix-agent
+        env:
+          APPSIGNAL_APP_ID: ${{ secrets.APPSIGNAL_APP_ID }}
+          APPSIGNAL_PERSONAL_TOKEN: ${{ secrets.APPSIGNAL_PERSONAL_TOKEN }}
+          DEPLOY_TIME: ${{ inputs.deploy_time }}
+          DEPLOY_SHA: ${{ inputs.deploy_sha }}
+          WINDOW_MINUTES: ${{ inputs.window_minutes }}
+        run: |
+          set -euo pipefail
+          if incident_json=$(./scripts/watch-poll.sh); then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "incident<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$incident_json" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  fix:
+    name: fix detected incident
+    needs: poll
+    if: needs.poll.outputs.found == 'true'
+    uses: ./.github/workflows/fix-one.yml
+    with:
+      incident_json: ${{ needs.poll.outputs.incident }}
+      base_branch: ${{ inputs.base_branch }}
+      config_path: ${{ inputs.config_path }}
+      agent_repo_ref: ${{ inputs.agent_repo_ref }}
+      trigger: post-deploy
+    secrets: inherit

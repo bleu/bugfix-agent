@@ -1,0 +1,184 @@
+name: bugfix-agent / fix one
+
+on:
+  workflow_call:
+    inputs:
+      incident_json:    { type: string, required: true }
+      base_branch:      { type: string, default: main }
+      config_path:      { type: string, default: .github/agent/config.yml }
+      agent_repo_ref:   { type: string, default: v1 }
+      trigger:          { type: string, default: daily }    # daily | post-deploy
+    secrets:
+      ANTHROPIC_API_KEY:          { required: true }
+      LINEAR_API_KEY:             { required: true }
+      APPSIGNAL_APP_ID:           { required: true }
+      APPSIGNAL_PERSONAL_TOKEN:   { required: true }
+      DATABASE_READONLY_URL:      { required: false }
+      TS_OAUTH_CLIENT_ID:         { required: false }
+      TS_OAUTH_SECRET:            { required: false }
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      INCIDENT_JSON: ${{ inputs.incident_json }}
+      TRIGGER: ${{ inputs.trigger }}
+    steps:
+      - name: Checkout consumer repo (writable)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout bugfix-agent
+        uses: actions/checkout@v4
+        with:
+          repository: bleu/bugfix-agent
+          ref: ${{ inputs.agent_repo_ref }}
+          path: .bugfix-agent
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - working-directory: .bugfix-agent
+        run: npm install --no-audit --no-fund
+
+      - name: Setup Ruby (if Gemfile)
+        if: hashFiles('Gemfile') != '' || hashFiles('**/Gemfile') != ''
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Setup pnpm/npm install (if package.json)
+        if: hashFiles('package.json') != ''
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            corepack enable && corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ]; then
+            corepack enable && yarn install --frozen-lockfile
+          else
+            npm ci || npm install
+          fi
+
+      - name: Detect Tailscale availability
+        id: tsdetect
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          DB_URL: ${{ secrets.DATABASE_READONLY_URL }}
+        run: |
+          if [ -n "$TS_OAUTH_CLIENT_ID" ] && [ -n "$DB_URL" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Tailscale (for DB replica access)
+        if: steps.tsdetect.outputs.available == 'true'
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Resolve incident metadata
+        id: meta
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          APPSIGNAL_APP_ID: ${{ secrets.APPSIGNAL_APP_ID }}
+          APPSIGNAL_PERSONAL_TOKEN: ${{ secrets.APPSIGNAL_PERSONAL_TOKEN }}
+        working-directory: .bugfix-agent
+        run: |
+          set -euo pipefail
+          echo "$INCIDENT_JSON" > /tmp/incident.json
+          npx tsx scripts/prepare-run.ts \
+            --incident /tmp/incident.json \
+            --config "../${{ inputs.config_path }}" \
+            --trigger "$TRIGGER" \
+            --workspace "${{ github.workspace }}" \
+            --output /tmp/run-context.json
+          # prepare-run.ts ensures a Linear issue exists, writes incident samples,
+          # and renders the prompt to /tmp/prompt.md
+          echo "linear_identifier=$(jq -r .linear_identifier /tmp/run-context.json)" >> "$GITHUB_OUTPUT"
+          echo "linear_issue_id=$(jq -r .linear_issue_id /tmp/run-context.json)"     >> "$GITHUB_OUTPUT"
+          echo "linear_url=$(jq -r .linear_url /tmp/run-context.json)"               >> "$GITHUB_OUTPUT"
+          echo "branch=$(jq -r .branch /tmp/run-context.json)"                       >> "$GITHUB_OUTPUT"
+          echo "prompt_path=/tmp/prompt.md"                                          >> "$GITHUB_OUTPUT"
+
+      - name: Create working branch
+        run: |
+          git config user.name  "bugfix-agent"
+          git config user.email "bugfix-agent@users.noreply.github.com"
+          git checkout -b "${{ steps.meta.outputs.branch }}"
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt_file: ${{ steps.meta.outputs.prompt_path }}
+          model: claude-opus-4-7
+          working_directory: ${{ github.workspace }}
+          allowed_tools: Bash,Read,Edit,Write,Grep
+        env:
+          DATABASE_READONLY_URL: ${{ secrets.DATABASE_READONLY_URL }}
+
+      - name: Check for handoff
+        id: handoff
+        run: |
+          if [ -f AGENT_HANDOFF.md ]; then
+            echo "handoff=true" >> "$GITHUB_OUTPUT"
+            echo "---- AGENT_HANDOFF.md ----"
+            cat AGENT_HANDOFF.md
+          else
+            echo "handoff=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push and open PR (only if no handoff)
+        if: steps.handoff.outputs.handoff != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LINEAR_IDENTIFIER: ${{ steps.meta.outputs.linear_identifier }}
+          LINEAR_URL: ${{ steps.meta.outputs.linear_url }}
+          INCIDENT_JSON: ${{ inputs.incident_json }}
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Agent made no changes. Treating as handoff."
+            exit 0
+          fi
+          git push -u origin "$(git rev-parse --abbrev-ref HEAD)"
+          incident_url=$(echo "$INCIDENT_JSON" | jq -r .url)
+          incident_name=$(echo "$INCIDENT_JSON" | jq -r .name)
+          gh pr create \
+            --base "${{ inputs.base_branch }}" \
+            --title "fix: $incident_name [$LINEAR_IDENTIFIER]" \
+            --body "$(cat <<EOF
+          Automated fix opened by bugfix-agent (trigger: ${{ inputs.trigger }}).
+
+          - AppSignal incident: $incident_url
+          - Linear issue: $LINEAR_URL
+
+          Closes $LINEAR_IDENTIFIER
+          EOF
+          )" || true
+
+      - name: Comment on Linear (handoff or no-op)
+        if: steps.handoff.outputs.handoff == 'true' || failure()
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          LINEAR_ISSUE_ID: ${{ steps.meta.outputs.linear_issue_id }}
+        working-directory: .bugfix-agent
+        run: |
+          set -euo pipefail
+          body=""
+          if [ -f ../AGENT_HANDOFF.md ]; then
+            body=$(cat ../AGENT_HANDOFF.md)
+          else
+            body="Agent run failed before producing a PR. See workflow logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+          npx tsx scripts/comment-on-linear.ts "$LINEAR_ISSUE_ID" "$body"

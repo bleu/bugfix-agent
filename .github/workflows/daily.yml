@@ -1,0 +1,87 @@
+name: bugfix-agent / daily
+
+on:
+  workflow_call:
+    inputs:
+      max_fixes:
+        type: number
+        default: 5
+      base_branch:
+        type: string
+        default: main
+      config_path:
+        type: string
+        default: .github/agent/config.yml
+      agent_repo_ref:
+        type: string
+        default: v1
+    secrets:
+      ANTHROPIC_API_KEY:          { required: true }
+      LINEAR_API_KEY:             { required: true }
+      APPSIGNAL_APP_ID:           { required: true }
+      APPSIGNAL_PERSONAL_TOKEN:   { required: true }
+      DATABASE_READONLY_URL:      { required: false }
+      TS_OAUTH_CLIENT_ID:         { required: false }
+      TS_OAUTH_SECRET:            { required: false }
+
+jobs:
+  select:
+    name: select incidents
+    runs-on: ubuntu-latest
+    outputs:
+      incidents: ${{ steps.pick.outputs.incidents }}
+      count: ${{ steps.pick.outputs.count }}
+    steps:
+      - name: Checkout consumer repo
+        uses: actions/checkout@v4
+
+      - name: Checkout bugfix-agent
+        uses: actions/checkout@v4
+        with:
+          repository: bleu/bugfix-agent
+          ref: ${{ inputs.agent_repo_ref }}
+          path: .bugfix-agent
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install agent deps
+        working-directory: .bugfix-agent
+        run: npm install --no-audit --no-fund
+
+      - name: Pick incidents
+        id: pick
+        working-directory: .bugfix-agent
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          APPSIGNAL_APP_ID: ${{ secrets.APPSIGNAL_APP_ID }}
+          APPSIGNAL_PERSONAL_TOKEN: ${{ secrets.APPSIGNAL_PERSONAL_TOKEN }}
+        run: |
+          set -euo pipefail
+          result=$(npx tsx scripts/selector.ts "../${{ inputs.config_path }}" "${{ inputs.max_fixes }}")
+          echo "incidents<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$result" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          count=$(echo "$result" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.parse(d).length))')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Picked $count incident(s)."
+
+  fix:
+    name: fix incident ${{ matrix.incident.id }}
+    needs: select
+    if: needs.select.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        incident: ${{ fromJson(needs.select.outputs.incidents) }}
+    uses: ./.github/workflows/fix-one.yml
+    with:
+      incident_json: ${{ toJson(matrix.incident) }}
+      base_branch: ${{ inputs.base_branch }}
+      config_path: ${{ inputs.config_path }}
+      agent_repo_ref: ${{ inputs.agent_repo_ref }}
+      trigger: daily
+    secrets: inherit

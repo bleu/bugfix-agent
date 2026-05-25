@@ -1,0 +1,24 @@
+{
+  "name": "bugfix-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "appsignal": "tsx scripts/appsignal.ts",
+    "linear": "tsx scripts/linear.ts",
+    "selector": "tsx scripts/selector.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "graphql-request": "^7.1.0",
+    "yaml": "^2.5.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.7.0"
+  }
+}
