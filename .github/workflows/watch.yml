@@ -67,7 +67,7 @@ jobs:
     name: fix detected incident
     needs: poll
     if: needs.poll.outputs.found == 'true'
-    uses: bleu/bugfix-agent/.github/workflows/fix-one.yml@v1.0.15
+    uses: bleu/bugfix-agent/.github/workflows/fix-one.yml@v1.0.16
     with:
       incident_json: ${{ needs.poll.outputs.incident }}
       base_branch: ${{ inputs.base_branch }}

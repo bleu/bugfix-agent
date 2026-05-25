@@ -201,14 +201,15 @@ jobs:
           fi
           incident_name=$(echo "$INCIDENT_JSON" | jq -r .name)
           incident_url=$(echo "$INCIDENT_JSON" | jq -r .url)
-          echo "GH_TOKEN length: ${#GH_TOKEN}"
           git add -A
           git commit -m "fix: $incident_name [$LINEAR_IDENTIFIER]"
-          # Inject auth header explicitly for the push. act's docker-cp checkout
-          # shortcut doesn't set the extraheader that real GHA gets from
-          # actions/checkout; this -c is a no-op on real GHA.
-          git -c "http.https://github.com/.extraheader=Authorization: token ${GH_TOKEN}" \
-            push -u origin "$(git rev-parse --abbrev-ref HEAD)"
+          # Embed the token in the remote URL for the push. act's docker-cp
+          # checkout shortcut doesn't set up the auth header that real GHA
+          # gets from actions/checkout; this works in both environments.
+          BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/${BRANCH}"
+          git branch --set-upstream-to="origin/${BRANCH}" "$BRANCH" 2>/dev/null || true
           gh pr create \
             --base "${{ inputs.base_branch }}" \
             --title "fix: $incident_name [$LINEAR_IDENTIFIER]" \
