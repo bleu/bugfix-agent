@@ -115,11 +115,18 @@ jobs:
           if [ "$EUID" -eq 0 ]; then
             id claude-runner >/dev/null 2>&1 || useradd -m -u 1001 claude-runner
             chown -R claude-runner:claude-runner .
+
+            # Resolve node's actual location (setup-node@v4 puts it in
+            # /opt/hostedtoolcache/...). sudo's secure_path can drop these
+            # dirs from PATH, so we put them at the front explicitly.
+            NODE_BIN_DIR="$(dirname "$(command -v node)")"
+            echo "node at $NODE_BIN_DIR"
+
             sudo -u claude-runner -E env \
               ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
               DATABASE_READONLY_URL="${DATABASE_READONLY_URL:-}" \
               HOME=/home/claude-runner \
-              PATH="$PATH" \
+              PATH="$NODE_BIN_DIR:/usr/local/bin:/usr/bin:/bin" \
               npx -y @anthropic-ai/claude-code \
                 --model claude-opus-4-7 \
                 --dangerously-skip-permissions \
