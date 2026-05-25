@@ -119,6 +119,7 @@ jobs:
               ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
               DATABASE_READONLY_URL="${DATABASE_READONLY_URL:-}" \
               HOME=/home/claude-runner \
+              PATH="$PATH" \
               npx -y @anthropic-ai/claude-code \
                 --model claude-opus-4-7 \
                 --dangerously-skip-permissions \
