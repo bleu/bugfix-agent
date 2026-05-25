@@ -42,15 +42,20 @@ Repository context files (read these first if you need orientation):
 ## What you MUST do
 
 1. **Precisely characterize** the error by tracing through the stack and reading the relevant source files.
-2. **Write the minimal fix.** No drive-by refactors. No new abstractions. Match surrounding file conventions.
-3. **Stop after writing the fix.** Do NOT install gems, do NOT install npm packages, do NOT run tests, do NOT start any server. The runner does not have the project's dependencies installed and CI will run the suite after the PR is opened.
-4. **Stage your changes** with `git add` on the touched files only.
-5. **Open a PR** with:
-   - Branch name: `agent/{{LINEAR_IDENTIFIER}}-<short-kebab-slug>`
-   - Title: `fix: <one-line summary>` (conventional commit)
-   - Base branch: `{{BASE_BRANCH}}`
-   - Body: a "Why" paragraph, the AppSignal URL, the Linear identifier (`{{LINEAR_IDENTIFIER}}`), and "Closes {{LINEAR_IDENTIFIER}}"
-6. If you **cannot** produce a confident fix (root cause unclear, requires product/UX decision, blast radius too large): do NOT open a PR. Instead, write your diagnosis to `AGENT_HANDOFF.md` in the repo root and exit non-zero with a structured message — the workflow will post that diagnosis to the Linear issue.
+2. **Write the minimal fix.** Use the Edit / Write tools directly on files. No drive-by refactors. No new abstractions. Match surrounding file conventions.
+3. **Stop after writing the fix.** Do NOT install gems / npm packages, do NOT run tests, do NOT start any server, do NOT use any git command (no `git commit`, no `git push`, no `gh`). The runner does not have the project's dependencies installed, and the workflow itself owns all git + PR operations.
+4. If you **cannot** produce a confident fix (root cause unclear, requires product/UX decision, blast radius too large, fix would require >5 files or new dependencies): do NOT make partial changes. Instead, write your diagnosis to `AGENT_HANDOFF.md` in the repo root and stop — the workflow will post that diagnosis to the Linear issue.
+
+## What the workflow does (not you)
+
+After you exit, the workflow:
+- Stages everything you changed (`git add -A`).
+- Commits with message `fix: <incident name> [{{LINEAR_IDENTIFIER}}]`.
+- Pushes the branch `agent/{{LINEAR_IDENTIFIER}}-<short-kebab-slug>`.
+- Opens a PR against `{{BASE_BRANCH}}` with the AppSignal URL, the Linear link, and `Closes {{LINEAR_IDENTIFIER}}` in the body.
+- CI runs the test suite after the PR is opened.
+
+If you write `AGENT_HANDOFF.md` instead, no PR is opened; the workflow posts the contents of that file as a comment on the Linear issue.
 
 ## Hard rules
 

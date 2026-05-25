@@ -144,10 +144,10 @@ jobs:
             cat "${{ github.workspace }}/AGENT_HANDOFF.md"
           fi
 
-      - name: Push and open PR (only if no handoff)
+      - name: Commit, push, and open PR (only if no handoff)
         if: steps.handoff.outputs.handoff != 'true' && inputs.dry_run != true
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           LINEAR_IDENTIFIER: ${{ steps.meta.outputs.linear_identifier }}
           LINEAR_URL: ${{ steps.meta.outputs.linear_url }}
           INCIDENT_JSON: ${{ inputs.incident_json }}
@@ -157,9 +157,11 @@ jobs:
             echo "Agent made no changes. Treating as handoff."
             exit 0
           fi
-          git push -u origin "$(git rev-parse --abbrev-ref HEAD)"
-          incident_url=$(echo "$INCIDENT_JSON" | jq -r .url)
           incident_name=$(echo "$INCIDENT_JSON" | jq -r .name)
+          incident_url=$(echo "$INCIDENT_JSON" | jq -r .url)
+          git add -A
+          git commit -m "fix: $incident_name [$LINEAR_IDENTIFIER]"
+          git push -u origin "$(git rev-parse --abbrev-ref HEAD)"
           gh pr create \
             --base "${{ inputs.base_branch }}" \
             --title "fix: $incident_name [$LINEAR_IDENTIFIER]" \
