@@ -10,18 +10,18 @@ function client(token: string) {
 }
 
 const LIST_QUERY = gql`
-  query ListIncidents($appId: String!, $limit: Int!, $state: ExceptionIncidentStateEnum!) {
+  query ListIncidents($appId: String!, $limit: Int!, $state: IncidentStateEnum!) {
     app(id: $appId) {
-      exceptionIncidents(state: $state, limit: $limit, order: LAST_OCCURRED) {
+      exceptionIncidents(state: $state, limit: $limit, order: LAST) {
         id
         number
-        name: exceptionName
-        message: exceptionMessage
+        exceptionName
+        exceptionMessage
         actionNames
-        count: occurrenceCount
+        count
         lastOccurredAt
-        firstBacktraceAt
-        revision: lastRevision
+        createdAt
+        firstMarker { revision }
         state
       }
     }
@@ -29,20 +29,28 @@ const LIST_QUERY = gql`
 `;
 
 const SAMPLES_QUERY = gql`
-  query IncidentSamples($appId: String!, $incidentId: String!, $limit: Int!) {
+  query IncidentSamples($appId: String!, $incidentNumber: Int!, $limit: Int!) {
     app(id: $appId) {
-      exceptionIncident(id: $incidentId) {
-        id
-        samples(limit: $limit) {
-          id
-          time
-          revision
-          action: actionName
-          namespace
-          backtrace
-          params
-          environment
-          customData
+      incident(incidentNumber: $incidentNumber) {
+        ... on ExceptionIncident {
+          samples(limit: $limit) {
+            id
+            time
+            revision
+            action
+            namespace
+            params
+            customData
+            exception {
+              name
+              message
+              backtrace {
+                path
+                line
+                method
+              }
+            }
+          }
         }
       }
     }
@@ -52,20 +60,20 @@ const SAMPLES_QUERY = gql`
 type RawIncident = {
   id: string;
   number: number;
-  name: string;
-  message: string | null;
+  exceptionName: string;
+  exceptionMessage: string | null;
   actionNames: string[];
   count: number;
   lastOccurredAt: string;
-  firstBacktraceAt: string;
-  revision: string | null;
-  state: "OPEN" | "CLOSED" | "IGNORED";
+  createdAt: string;
+  firstMarker: { revision: string } | null;
+  state: "OPEN" | "CLOSED" | "WIP";
 };
 
-const orgSlug = (appId: string) => process.env.APPSIGNAL_ORG_SLUG ?? "perk-studio";
+const orgSlug = () => process.env.APPSIGNAL_ORG_SLUG ?? "perk-studio";
 
 const incidentUrl = (appId: string, number: number) =>
-  `https://appsignal.com/${orgSlug(appId)}/sites/${appId}/exceptions/${number}`;
+  `https://appsignal.com/${orgSlug()}/sites/${appId}/exceptions/${number}`;
 
 export async function listTopIncidents(opts: {
   appId: string;
@@ -81,13 +89,13 @@ export async function listTopIncidents(opts: {
       IncidentSchema.parse({
         id: i.id,
         number: i.number,
-        name: i.name,
-        message: i.message,
+        name: i.exceptionName,
+        message: i.exceptionMessage,
         action_names: i.actionNames ?? [],
         count: i.count,
         last_occurred_at: i.lastOccurredAt,
-        first_seen_at: i.firstBacktraceAt,
-        revision: i.revision,
+        first_seen_at: i.createdAt,
+        revision: i.firstMarker?.revision ?? null,
         state: i.state.toLowerCase(),
         url: incidentUrl(opts.appId, i.number),
       })
@@ -98,17 +106,17 @@ export async function listTopIncidents(opts: {
 export async function getIncidentSamples(opts: {
   appId: string;
   token: string;
-  incidentId: string;
+  incidentNumber: number;
   limit?: number;
 }) {
   const data = await client(opts.token).request<{
-    app: { exceptionIncident: { samples: unknown[] } };
+    app: { incident: { samples: unknown[] } | null };
   }>(SAMPLES_QUERY, {
     appId: opts.appId,
-    incidentId: opts.incidentId,
+    incidentNumber: opts.incidentNumber,
     limit: opts.limit ?? 3,
   });
-  return data.app.exceptionIncident.samples;
+  return data.app.incident?.samples ?? [];
 }
 
 export async function listIncidentsSince(opts: {
@@ -138,8 +146,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const limit = Number(process.argv[3] ?? 10);
     listTopIncidents({ appId, token, limit }).then((r) => console.log(JSON.stringify(r, null, 2)));
   } else if (cmd === "samples") {
-    const incidentId = process.argv[3];
-    getIncidentSamples({ appId, token, incidentId }).then((r) =>
+    const incidentNumber = Number(process.argv[3]);
+    getIncidentSamples({ appId, token, incidentNumber }).then((r) =>
       console.log(JSON.stringify(r, null, 2))
     );
   } else if (cmd === "since") {
@@ -147,7 +155,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       (r) => console.log(JSON.stringify(r, null, 2))
     );
   } else {
-    console.error("Usage: appsignal <top N | samples <id> | since <ISO> [revision]>");
+    console.error("Usage: appsignal <top N | samples <incidentNumber> | since <ISO> [revision]>");
     process.exit(2);
   }
 }

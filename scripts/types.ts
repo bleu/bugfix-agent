@@ -10,7 +10,7 @@ export const IncidentSchema = z.object({
   last_occurred_at: z.string(),
   first_seen_at: z.string(),
   revision: z.string().nullable().optional(),
-  state: z.enum(["open", "closed", "ignored"]),
+  state: z.enum(["open", "closed", "wip"]),
   url: z.string(),
 });
 export type Incident = z.infer<typeof IncidentSchema>;

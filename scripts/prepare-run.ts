@@ -32,6 +32,15 @@ function slugify(s: string): string {
     .slice(0, 40);
 }
 
+function formatBacktrace(sample: unknown): string {
+  const ex = (sample as { exception?: { backtrace?: unknown } } | null)?.exception;
+  const lines = Array.isArray(ex?.backtrace) ? (ex!.backtrace as Array<Record<string, unknown>>) : [];
+  return lines
+    .slice(0, 60)
+    .map((l) => `  ${l.path ?? "?"}:${l.line ?? "?"} in ${l.method ?? "?"}`)
+    .join("\n");
+}
+
 async function main() {
   const incidentPath = arg("incident");
   const configPath = arg("config");
@@ -50,7 +59,7 @@ async function main() {
   const samples = await getIncidentSamples({
     appId,
     token,
-    incidentId: incident.id,
+    incidentNumber: incident.number,
     limit: 3,
   });
 
@@ -83,10 +92,7 @@ async function main() {
     const teamId = config.linear.team_id;
 
     if (!issue) {
-      const stackPreview =
-        typeof samples[0] === "object" && samples[0] && "backtrace" in samples[0]
-          ? String((samples[0] as { backtrace: unknown }).backtrace).slice(0, 4000)
-          : "";
+      const stackPreview = formatBacktrace(samples[0]).slice(0, 4000);
       issue = await createIssue({
         apiKey: linearKey,
         teamId,
