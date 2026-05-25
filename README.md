@@ -109,11 +109,11 @@ context_files:
   - docs/**.md
 
 linear:
-  team_id: 283c0461-085a-4061-a252-8fb0a44938b4   # required (UUID)
+  team_id: <uuid>                                  # required
   team_key: TEAM                                   # required (issue prefix, e.g. PRK)
-  project_id: 6e919c63-...                         # required (UUID)
-  agent_ready_label_id: 2cf47f4d-...               # required (UUID)
-  backlog_state_id: 7fe85380-...                   # optional
+  project_id: <uuid>                               # required
+  agent_ready_label_id: <uuid>                     # required
+  backlog_state_id: <uuid>                         # optional
 
 test_command: bin/rails test
 base_branch: main
