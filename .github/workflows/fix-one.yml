@@ -210,10 +210,9 @@ jobs:
           git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             "HEAD:refs/heads/${BRANCH}"
           git branch --set-upstream-to="origin/${BRANCH}" "$BRANCH" 2>/dev/null || true
-          gh pr create \
-            --base "${{ inputs.base_branch }}" \
-            --title "fix: $incident_name [$LINEAR_IDENTIFIER]" \
-            --body "$(cat <<EOF
+          # Open the PR via the GitHub API directly — works in both act
+          # (which doesn't bundle gh) and real GHA.
+          PR_BODY=$(cat <<EOF
           Automated fix opened by bugfix-agent (trigger: ${{ inputs.trigger }}).
 
           - AppSignal incident: $incident_url
@@ -221,7 +220,26 @@ jobs:
 
           Closes $LINEAR_IDENTIFIER
           EOF
-          )" || true
+          )
+          PR_PAYLOAD=$(jq -n \
+            --arg title "fix: $incident_name [$LINEAR_IDENTIFIER]" \
+            --arg body  "$PR_BODY" \
+            --arg head  "$BRANCH" \
+            --arg base  "${{ inputs.base_branch }}" \
+            '{title: $title, body: $body, head: $head, base: $base}')
+          PR_RESPONSE=$(curl -sS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls" \
+            -d "$PR_PAYLOAD")
+          PR_URL=$(echo "$PR_RESPONSE" | jq -r '.html_url // empty')
+          if [ -n "$PR_URL" ]; then
+            echo "PR opened: $PR_URL"
+          else
+            echo "PR creation response (no html_url):"
+            echo "$PR_RESPONSE"
+          fi
 
       - name: Comment on Linear (handoff or no-op)
         if: (steps.handoff.outputs.handoff == 'true' || failure()) && inputs.dry_run != true
