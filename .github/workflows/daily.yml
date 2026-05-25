@@ -24,6 +24,7 @@ on:
       LINEAR_API_KEY:             { required: true }
       APPSIGNAL_APP_ID:           { required: true }
       APPSIGNAL_PERSONAL_TOKEN:   { required: true }
+      AGENT_GH_TOKEN:             { required: true }
       DATABASE_READONLY_URL:      { required: false }
       TS_OAUTH_CLIENT_ID:         { required: false }
       TS_OAUTH_SECRET:            { required: false }
@@ -81,7 +82,7 @@ jobs:
       max-parallel: 2
       matrix:
         incident: ${{ fromJson(needs.select.outputs.incidents) }}
-    uses: bleu/bugfix-agent/.github/workflows/fix-one.yml@v1.0.14
+    uses: bleu/bugfix-agent/.github/workflows/fix-one.yml@v1.0.15
     with:
       incident_json: ${{ toJson(matrix.incident) }}
       base_branch: ${{ inputs.base_branch }}
@@ -94,6 +95,7 @@ jobs:
       LINEAR_API_KEY:           ${{ secrets.LINEAR_API_KEY }}
       APPSIGNAL_APP_ID:         ${{ secrets.APPSIGNAL_APP_ID }}
       APPSIGNAL_PERSONAL_TOKEN: ${{ secrets.APPSIGNAL_PERSONAL_TOKEN }}
+      AGENT_GH_TOKEN:           ${{ secrets.AGENT_GH_TOKEN }}
       DATABASE_READONLY_URL:    ${{ secrets.DATABASE_READONLY_URL }}
       TS_OAUTH_CLIENT_ID:       ${{ secrets.TS_OAUTH_CLIENT_ID }}
       TS_OAUTH_SECRET:          ${{ secrets.TS_OAUTH_SECRET }}
