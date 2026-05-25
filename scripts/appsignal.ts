@@ -4,9 +4,9 @@ import { IncidentSchema, type Incident } from "./types.ts";
 const APPSIGNAL_GQL = "https://appsignal.com/graphql";
 
 function client(token: string) {
-  return new GraphQLClient(APPSIGNAL_GQL, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  // AppSignal authenticates via ?token=… on the URL (same scheme as their
+  // REST API), not via an Authorization header.
+  return new GraphQLClient(`${APPSIGNAL_GQL}?token=${encodeURIComponent(token)}`);
 }
 
 const LIST_QUERY = gql`
