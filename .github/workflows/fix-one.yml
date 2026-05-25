@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ github.token }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout bugfix-agent
         uses: actions/checkout@v4
@@ -186,7 +186,7 @@ jobs:
       - name: Commit, push, and open PR (only if no handoff)
         if: steps.handoff.outputs.handoff != 'true' && inputs.dry_run != true
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LINEAR_IDENTIFIER: ${{ steps.meta.outputs.linear_identifier }}
           LINEAR_URL: ${{ steps.meta.outputs.linear_url }}
           INCIDENT_JSON: ${{ inputs.incident_json }}
