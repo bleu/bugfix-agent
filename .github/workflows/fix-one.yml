@@ -100,6 +100,19 @@ jobs:
           git config user.email "bugfix-agent@users.noreply.github.com"
           git checkout -b "${{ steps.meta.outputs.branch }}"
 
+      - name: Isolate Claude's changes
+        # Stash any pre-existing dirty state (matters for `act` runs against
+        # local repos with untracked files; a no-op in real GHA after a fresh
+        # checkout). Exclude act-time artifacts so they never reach the PR.
+        run: |
+          set -euo pipefail
+          mkdir -p .git/info
+          grep -qxF '.bugfix-agent/' .git/info/exclude 2>/dev/null || echo '.bugfix-agent/' >> .git/info/exclude
+          grep -qxF '.claude/'       .git/info/exclude 2>/dev/null || echo '.claude/'       >> .git/info/exclude
+          git stash push --include-untracked --message "bugfix-agent: pre-claude baseline" -- \
+            ':!.bugfix-agent' ':!.claude' \
+            || echo "nothing to stash"
+
       - name: Run Claude Code
         working-directory: ${{ github.workspace }}
         env:
