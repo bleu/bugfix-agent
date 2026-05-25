@@ -26,23 +26,26 @@ function isStale(completedAt: string | null): boolean {
 
 export async function pickIncidents(configPath: string, maxFixes: number): Promise<Incident[]> {
   const config = loadConfig(configPath);
+  const dryRun = process.env.DRY_RUN === "true";
   const appId = secret("APPSIGNAL_APP_ID");
   const token = secret("APPSIGNAL_PERSONAL_TOKEN");
-  const linearKey = secret("LINEAR_API_KEY");
+  const linearKey = dryRun ? "" : secret("LINEAR_API_KEY");
 
   const candidates = await listTopIncidents({ appId, token, limit: RAW_LIMIT });
   const picked: Incident[] = [];
 
   for (const incident of candidates) {
     if (picked.length >= maxFixes) break;
-    const existing = await findIssueByFingerprint({
-      apiKey: linearKey,
-      teamKey: config.linear.team_key,
-      incidentId: incident.id,
-    });
-    if (existing) {
-      const done = existing.state.type === "completed" || existing.state.type === "canceled";
-      if (!done || !isStale(existing.completedAt)) continue;
+    if (!dryRun) {
+      const existing = await findIssueByFingerprint({
+        apiKey: linearKey,
+        teamKey: config.linear.team_key,
+        incidentId: incident.id,
+      });
+      if (existing) {
+        const done = existing.state.type === "completed" || existing.state.type === "canceled";
+        if (!done || !isStale(existing.completedAt)) continue;
+      }
     }
     picked.push(incident);
   }

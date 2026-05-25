@@ -9,6 +9,7 @@ on:
       base_branch:       { type: string, default: main }
       config_path:       { type: string, default: .github/agent/config.yml }
       agent_repo_ref:    { type: string, default: v1 }
+      dry_run:           { type: boolean, default: false }
     secrets:
       ANTHROPIC_API_KEY:          { required: true }
       LINEAR_API_KEY:             { required: true }
@@ -73,4 +74,5 @@ jobs:
       config_path: ${{ inputs.config_path }}
       agent_repo_ref: ${{ inputs.agent_repo_ref }}
       trigger: post-deploy
+      dry_run: ${{ inputs.dry_run }}
     secrets: inherit

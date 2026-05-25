@@ -38,13 +38,14 @@ async function main() {
   const trigger = arg("trigger");
   const workspace = arg("workspace");
   const outputPath = arg("output");
+  const dryRun = process.argv.includes("--dry-run") || process.env.DRY_RUN === "true";
 
   const incident = IncidentSchema.parse(JSON.parse(readFileSync(incidentPath, "utf8")));
   const config = ConfigSchema.parse(parseYaml(readFileSync(configPath, "utf8")));
 
   const appId = process.env.APPSIGNAL_APP_ID!;
   const token = process.env.APPSIGNAL_PERSONAL_TOKEN!;
-  const linearKey = process.env.LINEAR_API_KEY!;
+  const linearKey = process.env.LINEAR_API_KEY ?? "";
 
   const samples = await getIncidentSamples({
     appId,
@@ -53,32 +54,53 @@ async function main() {
     limit: 3,
   });
 
-  let issue = await findIssueByFingerprint({
-    apiKey: linearKey,
-    teamKey: config.linear.team_key,
-    incidentId: incident.id,
-  });
+  let issue: {
+    id: string;
+    identifier: string;
+    url: string;
+    title: string;
+    state: { id: string; name: string; type: string };
+    completedAt: string | null;
+  } | null = null;
 
-  const teamId = config.linear.team_id;
-
-  if (!issue) {
-    const stackPreview =
-      typeof samples[0] === "object" && samples[0] && "backtrace" in samples[0]
-        ? String((samples[0] as { backtrace: unknown }).backtrace).slice(0, 4000)
-        : "";
-    issue = await createIssue({
+  if (dryRun) {
+    issue = {
+      id: "dryrun",
+      identifier: `${config.linear.team_key}-DRYRUN`,
+      url: "https://linear.app/(dry-run)",
+      title: `(dry-run) ${incident.name}`,
+      state: { id: "dry", name: "Backlog", type: "backlog" },
+      completedAt: null,
+    };
+    console.error(`[dry-run] skipping Linear issue create/lookup`);
+  } else {
+    issue = await findIssueByFingerprint({
       apiKey: linearKey,
-      teamId,
-      projectId: config.linear.project_id,
-      stateId: config.linear.backlog_state_id,
-      labelIds: [config.linear.agent_ready_label_id],
-      title: `[bugfix-agent] ${incident.name}: ${incident.message ?? ""}`.slice(0, 200),
+      teamKey: config.linear.team_key,
       incidentId: incident.id,
-      incidentUrl: incident.url,
-      occurrenceCount: incident.count,
-      stackPreview,
-      projectDescription: config.project_description,
     });
+
+    const teamId = config.linear.team_id;
+
+    if (!issue) {
+      const stackPreview =
+        typeof samples[0] === "object" && samples[0] && "backtrace" in samples[0]
+          ? String((samples[0] as { backtrace: unknown }).backtrace).slice(0, 4000)
+          : "";
+      issue = await createIssue({
+        apiKey: linearKey,
+        teamId,
+        projectId: config.linear.project_id,
+        stateId: config.linear.backlog_state_id,
+        labelIds: [config.linear.agent_ready_label_id],
+        title: `[bugfix-agent] ${incident.name}: ${incident.message ?? ""}`.slice(0, 200),
+        incidentId: incident.id,
+        incidentUrl: incident.url,
+        occurrenceCount: incident.count,
+        stackPreview,
+        projectDescription: config.project_description,
+      });
+    }
   }
 
   const promptTemplate = readFileSync(join(REPO_ROOT, "prompts", "fix-incident.md"), "utf8");

@@ -15,6 +15,10 @@ on:
       agent_repo_ref:
         type: string
         default: v1
+      dry_run:
+        type: boolean
+        default: false
+        description: "Skip Linear creation + PR open; print the diff instead."
     secrets:
       ANTHROPIC_API_KEY:          { required: true }
       LINEAR_API_KEY:             { required: true }
@@ -58,6 +62,7 @@ jobs:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
           APPSIGNAL_APP_ID: ${{ secrets.APPSIGNAL_APP_ID }}
           APPSIGNAL_PERSONAL_TOKEN: ${{ secrets.APPSIGNAL_PERSONAL_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           result=$(npx tsx scripts/selector.ts "../${{ inputs.config_path }}" "${{ inputs.max_fixes }}")
@@ -84,4 +89,5 @@ jobs:
       config_path: ${{ inputs.config_path }}
       agent_repo_ref: ${{ inputs.agent_repo_ref }}
       trigger: daily
+      dry_run: ${{ inputs.dry_run }}
     secrets: inherit

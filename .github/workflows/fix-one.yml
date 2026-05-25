@@ -8,6 +8,7 @@ on:
       config_path:      { type: string, default: .github/agent/config.yml }
       agent_repo_ref:   { type: string, default: v1 }
       trigger:          { type: string, default: daily }    # daily | post-deploy
+      dry_run:          { type: boolean, default: false }   # skip Linear + PR; print diff
     secrets:
       ANTHROPIC_API_KEY:          { required: true }
       LINEAR_API_KEY:             { required: true }
@@ -28,6 +29,7 @@ jobs:
     env:
       INCIDENT_JSON: ${{ inputs.incident_json }}
       TRIGGER: ${{ inputs.trigger }}
+      DRY_RUN: ${{ inputs.dry_run }}
     steps:
       - name: Checkout consumer repo (writable)
         uses: actions/checkout@v4
@@ -138,8 +140,27 @@ jobs:
             echo "handoff=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Show generated changes (dry-run)
+        if: inputs.dry_run == true
+        run: |
+          echo "=================  DRY-RUN: prompt sent to Claude  ================="
+          cat /tmp/prompt.md || true
+          echo
+          echo "=================  DRY-RUN: files changed  ========================"
+          git -C "${{ github.workspace }}" status --short || true
+          echo
+          echo "=================  DRY-RUN: diff  ================================="
+          git -C "${{ github.workspace }}" diff --stat || true
+          echo
+          git -C "${{ github.workspace }}" diff || true
+          echo
+          if [ -f "${{ github.workspace }}/AGENT_HANDOFF.md" ]; then
+            echo "=================  DRY-RUN: AGENT_HANDOFF.md  ==================="
+            cat "${{ github.workspace }}/AGENT_HANDOFF.md"
+          fi
+
       - name: Push and open PR (only if no handoff)
-        if: steps.handoff.outputs.handoff != 'true'
+        if: steps.handoff.outputs.handoff != 'true' && inputs.dry_run != true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LINEAR_IDENTIFIER: ${{ steps.meta.outputs.linear_identifier }}
@@ -168,7 +189,7 @@ jobs:
           )" || true
 
       - name: Comment on Linear (handoff or no-op)
-        if: steps.handoff.outputs.handoff == 'true' || failure()
+        if: (steps.handoff.outputs.handoff == 'true' || failure()) && inputs.dry_run != true
         env:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
           LINEAR_ISSUE_ID: ${{ steps.meta.outputs.linear_issue_id }}
