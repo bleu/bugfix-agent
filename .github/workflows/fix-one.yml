@@ -50,23 +50,6 @@ jobs:
       - working-directory: .bugfix-agent
         run: npm install --no-audit --no-fund
 
-      - name: Setup Ruby (if Gemfile)
-        if: hashFiles('Gemfile') != '' || hashFiles('**/Gemfile') != ''
-        uses: ruby/setup-ruby@v1
-        with:
-          bundler-cache: true
-
-      - name: Setup pnpm/npm install (if package.json)
-        if: hashFiles('package.json') != ''
-        run: |
-          if [ -f pnpm-lock.yaml ]; then
-            corepack enable && corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
-          elif [ -f yarn.lock ]; then
-            corepack enable && yarn install --frozen-lockfile
-          else
-            npm ci || npm install
-          fi
-
       - name: Detect Tailscale availability
         id: tsdetect
         env:

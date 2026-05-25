@@ -41,10 +41,10 @@ Repository context files (read these first if you need orientation):
 
 ## What you MUST do
 
-1. **Reproduce or precisely characterize** the error. Trace through the stack. If you can't reproduce locally, write a focused unit/integration test that fails because of the bug.
+1. **Precisely characterize** the error by tracing through the stack and reading the relevant source files.
 2. **Write the minimal fix.** No drive-by refactors. No new abstractions. Match surrounding file conventions.
-3. **Add or update a regression test** that would have caught the bug.
-4. **Run the test suite**: `{{TEST_COMMAND}}`. All tests must pass before you open the PR.
+3. **Stop after writing the fix.** Do NOT install gems, do NOT install npm packages, do NOT run tests, do NOT start any server. The runner does not have the project's dependencies installed and CI will run the suite after the PR is opened.
+4. **Stage your changes** with `git add` on the touched files only.
 5. **Open a PR** with:
    - Branch name: `agent/{{LINEAR_IDENTIFIER}}-<short-kebab-slug>`
    - Title: `fix: <one-line summary>` (conventional commit)
