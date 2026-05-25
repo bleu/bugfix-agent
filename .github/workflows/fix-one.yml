@@ -105,14 +105,32 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DATABASE_READONLY_URL: ${{ secrets.DATABASE_READONLY_URL }}
+          PROMPT_PATH: ${{ steps.meta.outputs.prompt_path }}
         run: |
           set -euo pipefail
-          # Direct CLI invocation — avoids OIDC requirements of the
-          # anthropics/claude-code-action and keeps act/GHA parity.
-          npx -y @anthropic-ai/claude-code \
-            --model claude-opus-4-7 \
-            --dangerously-skip-permissions \
-            -p "$(cat ${{ steps.meta.outputs.prompt_path }})"
+          # The Claude CLI refuses --dangerously-skip-permissions as root.
+          # On real GHA the runner is non-root (`runner` user), so this branch
+          # is skipped. In `act`, the container is root by default, so we
+          # create a sandbox user and run the CLI as that user.
+          if [ "$EUID" -eq 0 ]; then
+            id claude-runner >/dev/null 2>&1 || useradd -m -u 1001 claude-runner
+            chown -R claude-runner:claude-runner .
+            sudo -u claude-runner -E env \
+              ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+              DATABASE_READONLY_URL="${DATABASE_READONLY_URL:-}" \
+              HOME=/home/claude-runner \
+              npx -y @anthropic-ai/claude-code \
+                --model claude-opus-4-7 \
+                --dangerously-skip-permissions \
+                -p "$(cat "$PROMPT_PATH")"
+            # Restore ownership so subsequent root-owned steps (git, gh) work.
+            chown -R 0:0 .
+          else
+            npx -y @anthropic-ai/claude-code \
+              --model claude-opus-4-7 \
+              --dangerously-skip-permissions \
+              -p "$(cat "$PROMPT_PATH")"
+          fi
 
       - name: Check for handoff
         id: handoff
